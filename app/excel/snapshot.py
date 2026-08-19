@@ -6,12 +6,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.domain.trade import TradeKey
-from app.excel.detector import TableLocation
+from app.domain.trade import PairKey, TradeKey
+from app.excel.detector import MODE_COUNTERPARTY, TableLocation
 from app.utils.normalization import (
     FIELD_BROKER,
+    FIELD_BUYER,
     FIELD_PRICE,
     FIELD_QUANTITY,
+    FIELD_SELLER,
     FIELD_SIDE,
     FIELD_TIME,
     normalize_broker,
@@ -26,7 +28,7 @@ MIN_BLOCK = 128
 
 @dataclass(slots=True)
 class Snapshot:
-    keys: list[TradeKey]
+    keys: list
     raw_rows: list[tuple]
     read_seconds: float
     block_size: int
@@ -83,16 +85,23 @@ class SnapshotReader:
 
     def _convert(
         self, rows: list[tuple], first_col: int
-    ) -> tuple[list[TradeKey], list[tuple], int, float | None]:
+    ) -> tuple[list, list[tuple], int, float | None]:
         loc = self.location
+        counterparty = loc.mode == MODE_COUNTERPARTY
         idx_time = loc.columns[FIELD_TIME] - first_col
         idx_qty = loc.columns[FIELD_QUANTITY] - first_col
-        idx_broker = loc.columns[FIELD_BROKER] - first_col
-        idx_side = loc.columns[FIELD_SIDE] - first_col
         idx_price = loc.columns.get(FIELD_PRICE)
         idx_price = idx_price - first_col if idx_price is not None else None
+        if counterparty:
+            idx_buyer = loc.columns[FIELD_BUYER] - first_col
+            idx_seller = loc.columns[FIELD_SELLER] - first_col
+            idx_broker = idx_side = -1
+        else:
+            idx_broker = loc.columns[FIELD_BROKER] - first_col
+            idx_side = loc.columns[FIELD_SIDE] - first_col
+            idx_buyer = idx_seller = -1
 
-        keys: list[TradeKey] = []
+        keys: list = []
         raw_rows: list[tuple] = []
         invalid = 0
         last_price: float | None = None
@@ -108,23 +117,41 @@ class SnapshotReader:
 
             trade_time = normalize_time(row[idx_time]) if idx_time < len(row) else ""
             quantity = parse_quantity(row[idx_qty]) if idx_qty < len(row) else None
-            broker = normalize_broker(row[idx_broker], self.aliases) if idx_broker < len(row) else ""
-            side = normalize_side(row[idx_side]) if idx_side < len(row) else ""
             price = 0.0
             if idx_price is not None and idx_price < len(row):
                 price = parse_number(row[idx_price]) or 0.0
 
-            if not trade_time or quantity is None or quantity <= 0 or not broker:
+            if not trade_time or quantity is None or quantity <= 0:
                 invalid += 1
                 continue
+
+            if counterparty:
+                buyer = self._broker(row, idx_buyer)
+                seller = self._broker(row, idx_seller)
+                if not buyer and not seller:
+                    invalid += 1
+                    continue
+                key = PairKey(trade_time, price, quantity, buyer, seller)
+            else:
+                broker = self._broker(row, idx_broker)
+                side = normalize_side(row[idx_side]) if idx_side < len(row) else ""
+                if not broker:
+                    invalid += 1
+                    continue
+                key = TradeKey(trade_time, price, quantity, broker, side)
 
             if last_price is None and price:
                 last_price = price
 
-            keys.append(TradeKey(trade_time, price, quantity, broker, side))
+            keys.append(key)
             raw_rows.append(tuple(row))
 
         return keys, raw_rows, invalid, last_price
+
+    def _broker(self, row: tuple, index: int) -> str:
+        if index < 0 or index >= len(row):
+            return ""
+        return normalize_broker(row[index], self.aliases)
 
 
 def _as_rows(values: Any) -> list[tuple]:

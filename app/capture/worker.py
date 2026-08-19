@@ -14,7 +14,7 @@ from PySide6.QtCore import QThread, Signal
 
 from app.analytics.aggregator import Aggregator
 from app.capture.multiset_diff import MultisetDiff
-from app.domain.trade import Trade
+from app.domain.trade import Trade, expand_key
 from app.excel.connector import ExcelConnector, ExcelUnavailable, com_initialize, com_uninitialize
 from app.excel.detector import TableLocation, detect_table
 from app.excel.snapshot import Snapshot, SnapshotReader
@@ -217,12 +217,17 @@ class CaptureWorker(QThread):
 
         agg_seconds = 0.0
         if result.new_items:
-            trades = [
-                Trade.from_key(key, now, symbol=symbol, session_date=session_date)
-                for key in result.new_items
-            ]
+            trades: list[Trade] = []
+            row_volume = 0
+            for key in result.new_items:
+                expanded = expand_key(key, now, symbol=symbol, session_date=session_date)
+                trades.extend(expanded)
+                if expanded:
+                    row_volume += expanded[0].quantity
             t1 = time.perf_counter()
-            self.aggregator.add_trades(trades)
+            self.aggregator.add_trades(
+                trades, row_count=len(result.new_items), row_volume=row_volume
+            )
             agg_seconds = time.perf_counter() - t1
             for trade in trades:
                 try:

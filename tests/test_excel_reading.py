@@ -1,7 +1,9 @@
 """Detector e leitor de snapshot validados com um Excel simulado (sem COM)."""
 
-from app.excel.detector import column_letter, detect_table
+from app.domain.trade import PairKey, TradeKey, expand_key
+from app.excel.detector import MODE_COUNTERPARTY, column_letter, detect_table
 from app.excel.snapshot import SnapshotReader
+from app.utils.normalization import SIDE_BUY, SIDE_SELL
 
 HEADER_ROW = 14
 FIRST_COL = 8  # coluna H
@@ -118,6 +120,44 @@ def test_leitura_de_snapshot():
     assert first.aggressor_side == "RLP"
     # negócios idênticos consecutivos permanecem duplicados na lista
     assert snapshot.keys[2] == snapshot.keys[3]
+
+
+COUNTERPARTY_GRID = [
+    ["DOLPRO", "Negócios", None, None, None],
+    ["Data", "Compradora", "Valor", "Quantidade", "Vendedora"],
+    ["10:03:18.884", "Santander", 5118.5, 44, "UBS"],
+    ["10:03:18.884", "Santander", 5118.5, 44, "UBS"],
+    ["10:03:18.882", "UBS", 5118.5, 50, "BTG"],
+]
+
+
+def test_detecta_layout_contraparte():
+    ws = FakeWorksheet(grid=COUNTERPARTY_GRID)
+    location = detect_table(FakeApp([FakeWorkbook(sheets=[ws])]))
+    assert location.mode == MODE_COUNTERPARTY
+    assert column_letter(location.columns["buyer_broker"]) == "I"
+    assert column_letter(location.columns["seller_broker"]) == "L"
+
+    snapshot = SnapshotReader(location).read(ws)
+    assert snapshot.size == 3
+    assert isinstance(snapshot.keys[0], PairKey)
+    assert snapshot.keys[0] == snapshot.keys[1]  # linhas idênticas continuam duplicadas
+
+
+def test_expansao_de_linha_contraparte_gera_compra_e_venda():
+    key = PairKey("10:03:18.884", 5118.5, 44, "Santander", "UBS")
+    trades = expand_key(key, capture_timestamp=1.0, symbol="DOLPRO")
+    assert len(trades) == 2
+    assert (trades[0].broker, trades[0].aggressor_side) == ("Santander", SIDE_BUY)
+    assert (trades[1].broker, trades[1].aggressor_side) == ("UBS", SIDE_SELL)
+    assert all(t.quantity == 44 for t in trades)
+
+
+def test_expansao_layout_agressor_gera_um_trade():
+    key = TradeKey("09:27:31.362", 5125.0, 25, "BTG", SIDE_SELL)
+    trades = expand_key(key, capture_timestamp=1.0)
+    assert len(trades) == 1
+    assert trades[0].broker == "BTG"
 
 
 def test_snapshot_ignora_linhas_invalidas():

@@ -60,7 +60,17 @@ class Aggregator:
         self._rate_marks: list[tuple[float, int]] = []
 
     # ---------------------------------------------------------------- escrita
-    def add_trades(self, trades: Iterable[Trade]) -> None:
+    def add_trades(
+        self,
+        trades: Iterable[Trade],
+        row_count: int | None = None,
+        row_volume: int | None = None,
+    ) -> None:
+        """row_count/row_volume descrevem as linhas originais da planilha.
+
+        No layout de contraparte cada linha vira 2 trades (compra + venda); os
+        totais globais devem continuar refletindo o número real de negócios.
+        """
         trades = list(trades)
         if not trades:
             return
@@ -71,6 +81,10 @@ class Aggregator:
                 self._reset_locked(session)
             for trade in trades:
                 self._apply_locked(trade)
+            self._total_trades += row_count if row_count is not None else len(trades)
+            self._total_volume += (
+                row_volume if row_volume is not None else sum(t.quantity for t in trades)
+            )
             self._flow.add_many(trades)
             self._flow.prune(trades[-1].capture_timestamp)
             self._rate_marks.append(
@@ -102,8 +116,6 @@ class Aggregator:
             self._rlp_volume += qty
         else:
             stats.rlp_count += 1
-        self._total_trades += 1
-        self._total_volume += qty
 
     def _trim_rate_marks(self, now: float) -> None:
         limit = now - 60.0

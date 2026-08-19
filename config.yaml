@@ -1,33 +1,31 @@
 capture:
   interval_ms: 250
   max_rows: 5000
-  # utilização de captura (linhas novas / linhas visíveis) acima destes valores gera alerta
-  risk_warn: 0.70
-  risk_critical: 0.90
-
+  risk_warn: 0.7
+  risk_critical: 0.9
 gui:
   refresh_ms: 500
   top_n: 15
-
 database:
   path: data/flowrank.db
   flush_interval_ms: 1000
   batch_size: 500
-
 excel:
   workbook: auto
   worksheet: auto
   header_row: auto
   symbol: auto
-
 analytics:
-  windows_s: [5, 10, 30, 60, 300]
+  windows_s:
+  - 5
+  - 10
+  - 30
+  - 60
+  - 300
   buffer_seconds: 330
-
 logging:
   path: logs/flowrank.log
   level: INFO
   max_bytes: 5000000
   backup_count: 5
-
 broker_aliases: {}
