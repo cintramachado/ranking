@@ -30,17 +30,18 @@ class SortableItem(QTableWidgetItem):
 
 
 class Cell:
-    __slots__ = ("text", "value", "color", "align")
+    __slots__ = ("text", "value", "color", "align", "tooltip")
 
     def __init__(self, text: str, value: Any = None, color: QColor | None = None, align: int = Qt.AlignRight | Qt.AlignVCenter):
         self.text = text
         self.value = value if value is not None else text
         self.color = color
         self.align = align
+        self.tooltip = ""
 
 
 class RankingTable(QTableWidget):
-    def __init__(self, headers: Sequence[str], parent=None) -> None:
+    def __init__(self, headers: Sequence[str], stretch_column: int = 0, parent=None) -> None:
         super().__init__(0, len(headers), parent)
         self.setHorizontalHeaderLabels(list(headers))
         self.verticalHeader().setVisible(False)
@@ -50,9 +51,9 @@ class RankingTable(QTableWidget):
         self.setSortingEnabled(True)
         self.setShowGrid(False)
         header = self.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        for i in range(1, len(headers)):
-            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        for i in range(len(headers)):
+            mode = QHeaderView.Stretch if i == stretch_column else QHeaderView.ResizeToContents
+            header.setSectionResizeMode(i, mode)
         header.setSortIndicatorShown(True)
 
     def set_rows(self, rows: Sequence[Sequence[Cell]]) -> None:
@@ -68,6 +69,8 @@ class RankingTable(QTableWidget):
                 item.setTextAlignment(cell.align)
                 if cell.color is not None:
                     item.setForeground(QBrush(cell.color))
+                if cell.tooltip:
+                    item.setToolTip(cell.tooltip)
                 self.setItem(r, c, item)
         self.setSortingEnabled(True)
         if sort_column >= 0:

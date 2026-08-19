@@ -1,7 +1,7 @@
 import time
 
 from app.analytics.aggregator import Aggregator
-from app.analytics.ranking import balance_ranking, top_buyers, top_sellers
+from app.analytics.ranking import net_buyers, net_sellers
 from app.domain.trade import Trade
 from app.utils.normalization import SIDE_BUY, SIDE_RLP, SIDE_SELL
 
@@ -76,7 +76,7 @@ def test_nova_sessao_zera_ranking():
     assert snap.rows[0].buy_volume == 50
 
 
-def test_rankings():
+def test_rankings_por_posicao_liquida():
     now = time.time()
     agg = Aggregator(windows=(5,))
     agg.add_trades(
@@ -85,12 +85,16 @@ def test_rankings():
             make("B", SIDE_BUY, 300, now),
             make("B", SIDE_SELL, 50, now),
             make("C", SIDE_SELL, 500, now),
+            make("C", SIDE_BUY, 100, now),
+            make("D", SIDE_BUY, 80, now),
+            make("D", SIDE_SELL, 80, now),
         ]
     )
     rows = agg.snapshot(now).rows
-    assert [r.broker for r in top_buyers(rows, 2)] == ["B", "A"]
-    assert [r.broker for r in top_sellers(rows, 2)] == ["C", "B"]
-    assert balance_ranking(rows, 3)[0].broker == "B"
+    # comprados: B (+250) e A (+100); D está zerado e não aparece em nenhum lado
+    assert [r.broker for r in net_buyers(rows, 5)] == ["B", "A"]
+    assert [r.broker for r in net_sellers(rows, 5)] == ["C"]
+    assert net_sellers(rows, 5)[0].balance == -400
 
 
 def test_aceleracao_de_compra():

@@ -31,25 +31,18 @@ def filter_rows(
     return result
 
 
-def top_buyers(rows: Sequence[BrokerRow], top_n: int = 15) -> list[BrokerRow]:
-    ranked = [r for r in rows if r.buy_volume > 0]
-    ranked.sort(key=lambda r: r.buy_volume, reverse=True)
-    return ranked[:top_n]
-
-
-def top_sellers(rows: Sequence[BrokerRow], top_n: int = 15) -> list[BrokerRow]:
-    ranked = [r for r in rows if r.sell_volume > 0]
-    ranked.sort(key=lambda r: r.sell_volume, reverse=True)
-    return ranked[:top_n]
-
-
-def balance_ranking(rows: Sequence[BrokerRow], top_n: int = 15) -> list[BrokerRow]:
-    ranked = list(rows)
+def net_buyers(rows: Sequence[BrokerRow], top_n: int = 15) -> list[BrokerRow]:
+    """Corretoras com maior posição comprada (saldo agressor positivo)."""
+    ranked = [r for r in rows if r.balance > 0]
     ranked.sort(key=lambda r: r.balance, reverse=True)
-    if len(ranked) <= top_n:
-        return ranked
-    half = max(1, top_n // 2)
-    return ranked[:half] + ranked[-(top_n - half):]
+    return ranked[:top_n]
+
+
+def net_sellers(rows: Sequence[BrokerRow], top_n: int = 15) -> list[BrokerRow]:
+    """Corretoras com maior posição vendida (saldo agressor negativo)."""
+    ranked = [r for r in rows if r.balance < 0]
+    ranked.sort(key=lambda r: r.balance)
+    return ranked[:top_n]
 
 
 def ranking_export_rows(snapshot: AggregateSnapshot) -> list[dict]:

@@ -159,10 +159,13 @@ Isso é coberto por 11 testes em `tests/test_multiset_diff.py`.
 2. Detecção automática de workbook, planilha, linha do cabeçalho, colunas e ativo (2 layouts).
 3. Captura contínua em thread própria com intervalo configurável (100 ms a 1 s).
 4. Multiset diff com baseline, preservação de multiplicidade e métrica de `capture_utilization`.
-5. Ranking de maiores compradores, maiores vendedores e saldo por corretora, com ordenação por clique.
-6. Estatísticas por corretora: compra, venda, saldo, nº de negócios, lote médio, maior lote, RLP.
+5. Ranking de **posição líquida**: maiores compradores (saldo positivo) e maiores vendedores
+   (saldo negativo), lado a lado, com ordenação por clique em qualquer coluna.
+6. Estatísticas por corretora: compra, venda, posição, janela curta (30 s), nº de negócios,
+   lote médio, maior lote e RLP (os últimos disponíveis na exportação).
 7. Janelas móveis 5/10/30/60/300 s em memória (`deque`, uma passagem por refresh) e contratos/s.
-8. Detecção de aceleração (últimos 10 s vs 10–20 s atrás) como métrica informativa.
+8. Detecção de aceleração (últimos 10 s vs 10–20 s atrás) sinalizada por um losango ◆
+   verde (acelerando compra) ou vermelho (acelerando venda) na primeira coluna.
 9. RLP preservado sem inventar lado (`RLP` só vira COMPRA/VENDA se a direção estiver explícita).
 10. Sessão por pregão com reinício automático na virada do dia.
 11. SQLite com fila `queue.Queue` não bloqueante, escrita em batch e drenagem no encerramento.

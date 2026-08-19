@@ -7,7 +7,7 @@ gui:
   refresh_ms: 500
   top_n: 15
 database:
-  path: data/flowrank.db
+  path: data/smoke.db
   flush_interval_ms: 1000
   batch_size: 500
 excel:

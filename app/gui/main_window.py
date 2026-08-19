@@ -30,11 +30,10 @@ from app.analytics.ranking import (
     FILTER_BUY,
     FILTER_RLP,
     FILTER_SELL,
-    balance_ranking,
     filter_rows,
+    net_buyers,
+    net_sellers,
     ranking_export_rows,
-    top_buyers,
-    top_sellers,
 )
 from app.capture.worker import CaptureWorker
 from app.config import resolve_path, save_config
@@ -53,13 +52,15 @@ log = get_logger("gui")
 
 INTERVAL_OPTIONS = [100, 200, 250, 500, 1000]
 
+DIAMOND = "◆"
+
 
 class MainWindow(QMainWindow):
     def __init__(self, config: dict) -> None:
         super().__init__()
         self.config = config
         self.setWindowTitle("FlowRank")
-        self.resize(1360, 860)
+        self.resize(940, 620)
 
         analytics_cfg = config["analytics"]
         capture_cfg = config["capture"]
@@ -176,20 +177,16 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        top = QSplitter(Qt.Horizontal)
-        self.buyers_table = RankingTable(("Corretora", "Qtd comprada", f"{self._short_window}s"))
-        self.sellers_table = RankingTable(("Corretora", "Qtd vendida", f"{self._short_window}s"))
-        top.addWidget(_group("MAIORES COMPRADORES", self.buyers_table))
-        top.addWidget(_group("MAIORES VENDEDORES", self.sellers_table))
-        top.setSizes([500, 500])
+        headers = ("", "Corretora", "Compra", "Venda", "Posição", f"{self._short_window}s")
+        self.buyers_table = RankingTable(headers, stretch_column=1)
+        self.sellers_table = RankingTable(headers, stretch_column=1)
 
-        headers = ["Corretora", "Compra", "Venda", "Saldo", "Negócios", "Lote médio", "Maior lote"]
-        headers += [f"Saldo {w}s" if w < 60 else f"Saldo {w // 60}min" for w in self._windows]
-        headers += ["Contratos/s", "Aceleração"]
-        self.balance_table = RankingTable(headers)
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(_group("MAIORES COMPRADORES (posição comprada)", self.buyers_table))
+        split.addWidget(_group("MAIORES VENDEDORES (posição vendida)", self.sellers_table))
+        split.setSizes([500, 500])
 
-        layout.addWidget(top, 1)
-        layout.addWidget(_group("RANKING POR SALDO", self.balance_table), 2)
+        layout.addWidget(split, 1)
         return widget
 
     def _build_menu(self) -> None:
@@ -281,65 +278,34 @@ class MainWindow(QMainWindow):
         rows = filter_rows(snap.rows, self.filter_combo.currentText(), self.search_edit.text())
         top_n = int(self.config["gui"]["top_n"])
 
-        self.buyers_table.set_rows(
-            [
-                [
-                    Cell(r.broker, r.broker, align=Qt.AlignLeft | Qt.AlignVCenter),
-                    Cell(format_int_ptbr(r.buy_volume), r.buy_volume),
-                    Cell(
-                        format_signed_ptbr(r.window_balance(self._short_window)),
-                        r.window_balance(self._short_window),
-                        balance_color(r.window_balance(self._short_window)),
-                    ),
-                ]
-                for r in top_buyers(rows, top_n)
-            ]
-        )
-        self.sellers_table.set_rows(
-            [
-                [
-                    Cell(r.broker, r.broker, align=Qt.AlignLeft | Qt.AlignVCenter),
-                    Cell(format_int_ptbr(r.sell_volume), r.sell_volume),
-                    Cell(
-                        format_signed_ptbr(r.window_balance(self._short_window)),
-                        r.window_balance(self._short_window),
-                        balance_color(r.window_balance(self._short_window)),
-                    ),
-                ]
-                for r in top_sellers(rows, top_n)
-            ]
-        )
-
-        balance_rows = []
-        for r in balance_ranking(rows, top_n):
-            cells = [
-                Cell(r.broker, r.broker, align=Qt.AlignLeft | Qt.AlignVCenter),
-                Cell(format_int_ptbr(r.buy_volume), r.buy_volume),
-                Cell(format_int_ptbr(r.sell_volume), r.sell_volume),
-                Cell(format_signed_ptbr(r.balance), r.balance, balance_color(r.balance)),
-                Cell(format_int_ptbr(r.trade_count), r.trade_count),
-                Cell(f"{r.avg_lot:.1f}".replace(".", ","), r.avg_lot),
-                Cell(format_int_ptbr(r.max_lot), r.max_lot),
-            ]
-            for w in self._windows:
-                value = r.window_balance(w)
-                cells.append(Cell(format_signed_ptbr(value), value, balance_color(value)))
-            speed = r.window_speed(self._short_window)
-            cells.append(Cell(f"{speed:.1f}".replace(".", ","), speed))
-            arrow = ""
-            if r.acceleration.endswith("COMPRA"):
-                arrow = "↑ ACELERANDO COMPRA"
-            elif r.acceleration.endswith("VENDA"):
-                arrow = "↓ ACELERANDO VENDA"
-            cells.append(
-                Cell(arrow, arrow, balance_color(1 if "COMPRA" in arrow else -1 if arrow else 0),
-                     align=Qt.AlignLeft | Qt.AlignVCenter)
-            )
-            balance_rows.append(cells)
-        self.balance_table.set_rows(balance_rows)
+        self.buyers_table.set_rows([self._ranking_row(r) for r in net_buyers(rows, top_n)])
+        self.sellers_table.set_rows([self._ranking_row(r) for r in net_sellers(rows, top_n)])
 
         self._update_header(snap)
         self._update_health(snap)
+
+    def _ranking_row(self, row) -> list[Cell]:
+        window_balance = row.window_balance(self._short_window)
+        if row.acceleration.endswith("COMPRA"):
+            marker = Cell(DIAMOND, 1, balance_color(1), align=Qt.AlignCenter)
+            marker.tooltip = "Acelerando compra"
+        elif row.acceleration.endswith("VENDA"):
+            marker = Cell(DIAMOND, -1, balance_color(-1), align=Qt.AlignCenter)
+            marker.tooltip = "Acelerando venda"
+        else:
+            marker = Cell("", 0, align=Qt.AlignCenter)
+        return [
+            marker,
+            Cell(row.broker, row.broker, align=Qt.AlignLeft | Qt.AlignVCenter),
+            Cell(format_int_ptbr(row.buy_volume), row.buy_volume),
+            Cell(format_int_ptbr(row.sell_volume), row.sell_volume),
+            Cell(format_signed_ptbr(row.balance), row.balance, balance_color(row.balance)),
+            Cell(
+                format_signed_ptbr(window_balance),
+                window_balance,
+                balance_color(window_balance),
+            ),
+        ]
 
     def _update_header(self, snap) -> None:
         symbol = self.symbol_edit.text().strip() or snap.symbol or self._last_metrics.get("symbol", "")
